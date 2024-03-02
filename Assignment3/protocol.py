@@ -1,5 +1,8 @@
 class Protocol:
     # Initializer (Called from app.py)
+
+    
+
     # TODO: MODIFY ARGUMENTS AND LOGIC AS YOU SEEM FIT
     def __init__(self):
         self._key = None
