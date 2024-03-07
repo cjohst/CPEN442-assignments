@@ -17,7 +17,7 @@ class Assignment3VPN:
         # Initializing UI
         self.builder = builder = pygubu.Builder()
         builder.add_from_file("UI.ui")
-        
+
         # Getting references to UI elements
         self.mainwindow = builder.get_object('toplevel', master)
         self.hostNameEntry  = builder.get_object('ipEntry', self.mainwindow)
@@ -31,44 +31,50 @@ class Assignment3VPN:
         self.sendButton = builder.get_object('sendButton', self.mainwindow)
         self.logsText = builder.get_object('logsText', self.mainwindow)
         self.messagesText = builder.get_object('messagesText', self.mainwindow)
-        
+
         # Getting bound variables
         self.mode = None
         self.hostName = None
         self.port = None
         self.sharedSecret = None
         self.textMessage = None
-        builder.import_variables(self, ['mode', 'hostName', 'port', 'sharedSecret', 'textMessage'])               
+        builder.import_variables(self, ['mode', 'hostName', 'port', 'sharedSecret', 'textMessage'])
         builder.connect_callbacks(self)
-        
+
         # Network socket and connection
         self.s = None
         self.conn = None
         self.addr = None
-        
+
         # Server socket threads
         self.server_thread = Thread(target=self._AcceptConnections, daemon=True)
         self.receive_thread = Thread(target=self._ReceiveMessages, daemon=True)
-        
+
         # Creating a protocol object
         self.prtcl = Protocol()
-     
-    # Distructor     
+        self._CaptureSharedSecret()
+
+    # Distructor
     def __del__(self):
         # Closing the network socket
         if self.s is not None:
             self.s.close()
-            
+
         # Killing the spawned threads
         if self.server_thread.is_alive():
             self.server_thread.terminate()
         if self.receive_thread.is_alive():
             self.receive_thread.terminate()
-            
-    
+
+
     # Handle client mode selection
     def ClientModeSelected(self):
         self.hostName.set("localhost")
+
+    def _CaptureSharedSecret(self):
+        self.sharedSecret = self.secretEntry.get()
+        print(f"shared secret:{self.sharedSecret}")
+        self.prtcl.SetSharedKey(self.sharedSecret)
 
 
     # Handle sever mode selection
@@ -78,9 +84,13 @@ class Assignment3VPN:
 
     # Create a TCP connection between the client and the server
     def CreateConnection(self):
+        # Design desicion. after connections are accepted we cannot change shared key!
+        # In an ideal work we woul disable the option while connections are alive.
+        # but this is not in scope of this assignmetn?
+        self._CaptureSharedSecret()
         # Change button states
         self._ChangeConnectionMode()
-        
+
         # Create connection
         if self._CreateTCPConnection():
             if self.mode.get() == 0:
@@ -96,7 +106,7 @@ class Assignment3VPN:
     def _CreateTCPConnection(self):
         if not self._ValidateConnectionInputs():
             return False
-        
+
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -115,8 +125,8 @@ class Assignment3VPN:
         except Exception as e:
             self._AppendLog("CONNECTION: connection failed: {}".format(str(e)))
             return False
-            
-     
+
+
     # Accepting connections in a separate thread
     def _AcceptConnections(self):
         try:
@@ -124,10 +134,10 @@ class Assignment3VPN:
             self._AppendLog("SERVER: Waiting for connections...")
             self.conn, self.addr = self.s.accept()
             self._AppendLog("SERVER: Received connection from {}. You can now send/receive messages".format(self.addr))
-            
+
             # Starting receiver thread
             self.receive_thread.start()
-            
+
             # Enabling the secure and send buttons
             self.secureButton["state"] = "enable"
             self.sendButton["state"] = "enable"
@@ -142,7 +152,7 @@ class Assignment3VPN:
             try:
                 # Receiving all the data
                 cipher_text = self.conn.recv(4096)
-
+                print(cipher_text)
                 # Check if socket is still open
                 if cipher_text == None or len(cipher_text) == 0:
                     self._AppendLog("RECEIVER_THREAD: Received empty message")
@@ -160,7 +170,7 @@ class Assignment3VPN:
                 else:
                     plain_text = self.prtcl.DecryptAndVerifyMessage(cipher_text)
                     self._AppendMessage("Other: {}".format(plain_text.decode()))
-                    
+
             except Exception as e:
                 self._AppendLog("RECEIVER_THREAD: Error receiving data: {}".format(str(e)))
                 return False
@@ -168,19 +178,30 @@ class Assignment3VPN:
 
     # Send data to the other party
     def _SendMessage(self, message):
+        print("PRE ENCRYPT: sending the message:")
+        print(message)
         plain_text = message
         cipher_text = self.prtcl.EncryptAndProtectMessage(plain_text)
+        print("\nPOST ENCRYPT: sending the message:")
+        print(cipher_text)
         self.conn.send(cipher_text.encode())
-            
+
+    def _SendInitMessage(self):
+        print("sending the init message")
+        try:
+            init_message = self.prtcl.EncryptedInitMessage()
+        except Exception as e:
+            self._AppendLog(e)
+        print("\nPOST ENCRYPT: sending the init message:")
+        print(init_message)
+        self.conn.send(cipher_text.encode())
 
     # Secure connection with mutual authentication and key establishment
     def SecureConnection(self):
         # disable the button to prevent repeated clicks
         self.secureButton["state"] = "disabled"
-
         # TODO: THIS IS WHERE YOU SHOULD IMPLEMENT THE START OF YOUR MUTUAL AUTHENTICATION AND KEY ESTABLISHMENT PROTOCOL, MODIFY AS YOU SEEM FIT
-        init_message = self.prtcl.GetProtocolInitiationMessage()
-        self._SendMessage(init_message)
+        self._SendInitMessage()
 
 
     # Called when SendMessage button is clicked
@@ -193,7 +214,7 @@ class Assignment3VPN:
                 self.textMessage.set("")
             except Exception as e:
                 self._AppendLog("SENDING_MESSAGE: Error sending data: {}".format(str(e)))
-                
+
         else:
             messagebox.showerror("Networking", "Either the message is empty or the connection is not established.")
 
@@ -204,7 +225,7 @@ class Assignment3VPN:
         self.logsText.delete('1.0', tk.END)
         self.logsText.configure(state='disabled')
 
-    
+
     # Append log to the logs view
     def _AppendLog(self, text):
         self.logsText.configure(state='normal')
@@ -212,7 +233,7 @@ class Assignment3VPN:
         self.logsText.see(tk.END)
         self.logsText.configure(state='disabled')
 
-        
+
     def _AppendMessage(self, text):
         self.messagesText.configure(state='normal')
         self.messagesText.insert(tk.END, text + "\n\n")
@@ -223,26 +244,26 @@ class Assignment3VPN:
     # Enabling/disabling buttons based on the connection status
     def _ChangeConnectionMode(self, connecting=True):
         value = "disabled" if connecting else "enabled"
-        
+
         # change mode changing
         self.clientRadioButton["state"] = value
         self.serverRadioButton["state"] = value
-        
+
         # change inputs
         self.ipEntry["state"] = value
         self.portEntry["state"] = value
         self.secretEntry["state"] = value
-        
+
         # changing button states
         self.connectButton["state"] = value
 
-        
+
     # Verifying host name and port values
     def _ValidateConnectionInputs(self):
         if self.hostName.get() in ["", None]:
             messagebox.showerror("Validation", "Invalid host name.")
             return False
-        
+
         try:
             port = int(self.port.get())
             if port < 1024 or port > 65535:
@@ -251,10 +272,10 @@ class Assignment3VPN:
         except:
             messagebox.showerror("Validation", "Invalid port number.")
             return False
-            
+
         return True
 
-        
+
     # Main UI loop
     def run(self):
         self.mainwindow.mainloop()
