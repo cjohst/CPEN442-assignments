@@ -1,8 +1,13 @@
 from cryptography.hazmat.primitives.asymmetric import dh
+from base64 import b64decode, b64encode
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+import json
 
 class Protocol:
     # Initializer (Called from app.py)
     PROTOCOL_PREFIX = "AUTH_REQUEST"
+
 
     # TODO: MODIFY ARGUMENTS AND LOGIC AS YOU SEEM FIT
     def __init__(self):
@@ -45,6 +50,7 @@ class Protocol:
         if is_protocol:
             return True
         return False
+ 
 
     # Processing protocol message
     # TODO: IMPLMENET THE LOGIC (CALL SetSessionKey ONCE YOU HAVE THE KEY ESTABLISHED)
@@ -56,8 +62,7 @@ class Protocol:
     # Setting the key for the current session
     # TODO: MODIFY AS YOU SEEM FIT
     def SetSessionKey(self, key):
-        self._session_key = key
-        pass
+        self._key = key
 
     # Setting the key for the current session
     # TODO: MODIFY AS YOU SEEM FIT
@@ -66,18 +71,36 @@ class Protocol:
         pass
 
     # Encrypting messages
-    # TODO: IMPLEMENT ENCRYPTION WITH THE SESSION KEY (ALSO INCLUDE ANY NECESSARY INFO IN THE ENCRYPTED MESSAGE FOR INTEGRITY PROTECTION)
-    # RETURN AN ERROR MESSAGE IF INTEGRITY VERITIFCATION OR AUTHENTICATION FAILS
     def EncryptAndProtectMessage(self, plain_text):
-        # Add check here to NOT encrytp the message if the session key is not established yet
-        # What we can do is use the shared key to start
-        cipher_text = plain_text
-        return cipher_text
+
+        cipher = AES.new(self._key, AES.MODE_EAX)
+        cipher_text, auth_tag = cipher.encrypt_and_digest(plain_text.encode("utf-8"))
+        
+        message = {
+            "cipher_text" : b64encode(cipher_text).decode("utf-8"),
+            "auth_tag" : b64encode(auth_tag).decode("utf-8"),
+            "nonce" : b64encode(cipher.nonce).decode("utf-8"),
+        }
+        return json.dumps(message)
 
 
     # Decrypting and verifying messages
-    # TODO: IMPLEMENT DECRYPTION AND INTEGRITY CHECK WITH THE SESSION KEY
-    # RETURN AN ERROR MESSAGE IF INTEGRITY VERITIFCATION OR AUTHENTICATION FAILS
+    # TODO: ENSURE AN ERROR MESSAGE IS RETURNED IF INTEGRITY VERITIFCATION OR AUTHENTICATION FAILS
     def DecryptAndVerifyMessage(self, cipher_text):
-        plain_text = cipher_text
-        return plain_text
+
+        try: 
+            message = json.loads(cipher_text)
+
+            ct = b64decode(message["cipher_text"])
+            tag = b64decode(message["auth_tag"])
+            nonce = b64decode(message["nonce"])
+
+            cipher = AES.new(self._key, AES.MODE_EAX, nonce=nonce)
+
+            plain_text = cipher.decrypt_and_verify(ct, tag)
+                
+            return plain_text.decode("utf-8")
+        except (ValueError, KeyError) as e:
+            print("Decryption Error")
+            raise e
+
