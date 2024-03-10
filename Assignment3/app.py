@@ -33,7 +33,7 @@ class Assignment3VPN:
         self.messagesText = builder.get_object('messagesText', self.mainwindow)
 
         # Getting bound variables
-        self.mode = None
+        self.mode = None 
         self.hostName = None
         self.port = None
         self.sharedSecret = None
@@ -74,7 +74,7 @@ class Assignment3VPN:
     def _CaptureSharedSecret(self):
         self.sharedSecret = self.secretEntry.get()
         print(f"shared secret:{self.sharedSecret}")
-        self.prtcl.SetSharedKey(self.sharedSecret)
+        self.prtcl.SetSharedSecret(self.sharedSecret)
 
 
     # Handle sever mode selection
@@ -152,7 +152,7 @@ class Assignment3VPN:
             try:
                 # Receiving all the data
                 cipher_text = self.conn.recv(4096)
-                print(cipher_text)
+                print(f"Received cipher text: {cipher_text}")
                 # Check if socket is still open
                 if cipher_text == None or len(cipher_text) == 0:
                     self._AppendLog("RECEIVER_THREAD: Received empty message")
@@ -160,16 +160,31 @@ class Assignment3VPN:
 
                 # Checking if the received message is part of your protocol
                 # TODO: MODIFY THE INPUT ARGUMENTS AND LOGIC IF NECESSARY
-                if self.prtcl.IsMessagePartOfProtocol(cipher_text):
-                    # Disabling the button to prevent repeated clicks
-                    self.secureButton["state"] = "disabled"
-                    # Processing the protocol message
-                    self.prtcl.ProcessReceivedProtocolMessage(cipher_text)
+                if self.prtcl.IsMessagePartOfProtocol(cipher_text): #checks if newest msg is part of protocol                      
+                    if b"PING" in cipher_text:
+                        print("[+] PING")
+                        # Disabling the button to prevent repeated clicks
+                        self.secureButton["state"] = "disabled"
+                        # Processing the protocol message
+                        pem_public_key = self.prtcl.ProcessReceivedProtocolMessage(cipher_text)
+                        print(f"[*] Sending public key: {pem_public_key}")
+                        self._SendMessage(pem_public_key)
+                    elif b"PONG" in cipher_text:
+                        print("[+] PONG")
+                        self._AppendLog("ENCRYPTED SESSION ESTABLISHED")
+                        self._SendMessage("!! ENCRYPTED SESSION ESTABLISHED !!")
 
+
+                    else:
+                        print("[-] Unknown protocol message")
                 # Otherwise, decrypting and showing the messaage
                 else:
                     plain_text = self.prtcl.DecryptAndVerifyMessage(cipher_text)
-                    self._AppendMessage("Other: {}".format(plain_text.decode()))
+                    try:
+                        plain_text = plain_text.decode()
+                    except:
+                        pass
+                    self._AppendMessage("Other: {}".format(plain_text))
 
             except Exception as e:
                 self._AppendLog("RECEIVER_THREAD: Error receiving data: {}".format(str(e)))
@@ -178,6 +193,7 @@ class Assignment3VPN:
 
     # Send data to the other party
     def _SendMessage(self, message):
+        
         print("PRE ENCRYPT: sending the message:")
         print(message)
         plain_text = message
@@ -186,22 +202,13 @@ class Assignment3VPN:
         print(cipher_text)
         self.conn.send(cipher_text.encode())
 
-    def _SendInitMessage(self):
-        print("sending the init message")
-        try:
-            init_message = self.prtcl.EncryptedInitMessage()
-        except Exception as e:
-            self._AppendLog(e)
-        print("\nPOST ENCRYPT: sending the init message:")
-        print(init_message)
-        self.conn.send(cipher_text.encode())
-
     # Secure connection with mutual authentication and key establishment
     def SecureConnection(self):
         # disable the button to prevent repeated clicks
         self.secureButton["state"] = "disabled"
-        # TODO: THIS IS WHERE YOU SHOULD IMPLEMENT THE START OF YOUR MUTUAL AUTHENTICATION AND KEY ESTABLISHMENT PROTOCOL, MODIFY AS YOU SEEM FIT
-        self._SendInitMessage()
+
+        init_message = self.prtcl.GetProtocolInitiationMessage()
+        self._SendMessage(init_message)
 
 
     # Called when SendMessage button is clicked
