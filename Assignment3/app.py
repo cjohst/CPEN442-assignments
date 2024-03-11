@@ -1,5 +1,4 @@
 # system imports
-import sys
 import socket
 from threading import Thread
 import pygubu
@@ -33,7 +32,7 @@ class Assignment3VPN:
         self.messagesText = builder.get_object('messagesText', self.mainwindow)
 
         # Getting bound variables
-        self.mode = None 
+        self.mode = None
         self.hostName = None
         self.port = None
         self.sharedSecret = None
@@ -51,7 +50,8 @@ class Assignment3VPN:
         self.receive_thread = Thread(target=self._ReceiveMessages, daemon=True)
 
         # Creating a protocol object
-        self.prtcl = Protocol()
+        self.prtcl = Protocol("initSharedKey")
+        # Note the Updated GUI key is caputred upon trying to connect
         self._CaptureSharedSecret()
 
     # Distructor
@@ -73,8 +73,7 @@ class Assignment3VPN:
 
     def _CaptureSharedSecret(self):
         self.sharedSecret = self.secretEntry.get()
-        print(f"shared secret:{self.sharedSecret}")
-        self.prtcl.SetSharedSecret(self.sharedSecret)
+        self.prtcl.SetSharedKey(self.sharedSecret)
 
 
     # Handle sever mode selection
@@ -151,39 +150,47 @@ class Assignment3VPN:
         while True:
             try:
                 # Receiving all the data
-                cipher_text = self.conn.recv(4096)
+                cipher_text_bytes = self.conn.recv(4096)
+                cipher_text = cipher_text_bytes.decode("UTF-8")
                 print(f"Received cipher text: {cipher_text}")
                 # Check if socket is still open
                 if cipher_text == None or len(cipher_text) == 0:
                     self._AppendLog("RECEIVER_THREAD: Received empty message")
                     break
-
+                # Decode message
+                plain_text = ""
+                try:
+                    # Note THis will be a string
+                    plain_text = self.prtcl.DecryptAndVerifyMessage(cipher_text)
+                except Exception as e:
+                    self._AppendLog(f"Error: recieving message {e}")
                 # Checking if the received message is part of your protocol
-                # TODO: MODIFY THE INPUT ARGUMENTS AND LOGIC IF NECESSARY
-                if self.prtcl.IsMessagePartOfProtocol(cipher_text): #checks if newest msg is part of protocol                      
-                    if b"PING" in cipher_text:
-                        print("[+] PING")
+                if self.prtcl.IsMessagePartOfProtocol(plain_text): #checks if newest msg is part of protocol
+                    if Protocol.PING_PREFIX in plain_text:
+                        print("[+] PING Recieved")
                         # Disabling the button to prevent repeated clicks
                         self.secureButton["state"] = "disabled"
                         # Processing the protocol message
-                        pem_public_key = self.prtcl.ProcessReceivedProtocolMessage(cipher_text)
+                        pem_public_key = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
                         print(f"[*] Sending public key: {pem_public_key}")
                         self._SendMessage(pem_public_key)
-                    elif b"PONG" in cipher_text:
+                    elif Protocol.PONG_PREFIX in plain_text:
                         print("[+] PONG")
-                        self._AppendLog("ENCRYPTED SESSION ESTABLISHED")
+                        try:
+                            done_msg = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
+                            self._SendMessage(done_msg)
+                        except Exception as e:
+                            self._AppendLog(f"Failed to connect: {e}")
+                            self._SendMessage(f"Failed to connect: {e}")
+                            break
+                    elif Protocol.DONE_PREFIX in plain_text:
+                        _ = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
                         self._SendMessage("!! ENCRYPTED SESSION ESTABLISHED !!")
-
-
+                        self._AppendLog("ENCRYPTED SESSION ESTABLISHED")
                     else:
                         print("[-] Unknown protocol message")
-                # Otherwise, decrypting and showing the messaage
+                        self._AppendLog("[-] Unknown protocol message")
                 else:
-                    plain_text = self.prtcl.DecryptAndVerifyMessage(cipher_text)
-                    try:
-                        plain_text = plain_text.decode()
-                    except:
-                        pass
                     self._AppendMessage("Other: {}".format(plain_text))
 
             except Exception as e:
@@ -193,20 +200,18 @@ class Assignment3VPN:
 
     # Send data to the other party
     def _SendMessage(self, message):
-        
         print("PRE ENCRYPT: sending the message:")
         print(message)
         plain_text = message
         cipher_text = self.prtcl.EncryptAndProtectMessage(plain_text)
         print("\nPOST ENCRYPT: sending the message:")
         print(cipher_text)
-        self.conn.send(cipher_text.encode())
+        self.conn.send(cipher_text.encode("UTF-8"))
 
     # Secure connection with mutual authentication and key establishment
     def SecureConnection(self):
         # disable the button to prevent repeated clicks
         self.secureButton["state"] = "disabled"
-
         init_message = self.prtcl.GetProtocolInitiationMessage()
         self._SendMessage(init_message)
 
@@ -214,6 +219,14 @@ class Assignment3VPN:
     # Called when SendMessage button is clicked
     def SendMessage(self):
         text = self.textMessage.get()
+
+        # Sanitize user inputs to disallow inputs that mirror auth protocol
+        if Protocol.PONG_PREFIX in text or Protocol.PING_PREFIX in text or Protocol.DONE_PREFIX in text:
+            self._AppendLog("MESSAGE NOT ALLOWED.")
+            self._AppendMessage("You: {}".format(text))
+            self.textMessage.set("")
+            return
+
         if  text != "" and self.s is not None:
             try:
                 self._SendMessage(text)
@@ -221,7 +234,6 @@ class Assignment3VPN:
                 self.textMessage.set("")
             except Exception as e:
                 self._AppendLog("SENDING_MESSAGE: Error sending data: {}".format(str(e)))
-
         else:
             messagebox.showerror("Networking", "Either the message is empty or the connection is not established.")
 
