@@ -60,14 +60,11 @@ class Protocol:
     # This initialization message will be passed in a secure way (enrypted with some key in another step)
     def GetProtocolInitiationMessage(self):
         self._parameters = dh.generate_parameters(generator=2, key_size=512) # 2048
-        print("[*] PINGER Generated parameters")
         # We must save this private key for recieiving a PONG from PONGER
         self._pinger_private_key = self._parameters.generate_private_key()
         pinger_public_key = self._pinger_private_key.public_key()
-        print("[*] PINGER Generated keys")
         pem_public_key = pinger_public_key.public_bytes(encoding=Encoding.PEM, format=PublicFormat.SubjectPublicKeyInfo)
 
-        print(f"[+] PINGER Converted public key to PEM format:\n{pem_public_key}")
         pem_public_key = Protocol.PING_PREFIX + b64encode(pem_public_key).decode()
         return pem_public_key
 
@@ -79,16 +76,12 @@ class Protocol:
     # So no messages would be accidently included in the protocol
     def IsMessagePartOfProtocol(self, message):
         if Protocol.PING_PREFIX in message:
-            print("[+] PONGER RECIEVED PING from PINGER")
             return True
         elif Protocol.PONG_PREFIX in message:
-            print("[+] PINGER RECIEVED PONG from PONGER")
             return True
         elif Protocol.DONE_PREFIX in message:
-            print("[+] PONGER RECIEVED DONE from PINGER")
             return True
         else:
-            print("[-] This isn't a protocol message")
             return False
 
 
@@ -113,39 +106,29 @@ class Protocol:
             done_msg = self._recievePong(message_bytes)
             return done_msg
         if Protocol.DONE_PREFIX.encode('UTF-8') in message_bytes:
-            print("[*] PONGER Done message receieved. Encyprting with session key")
             self.ping_pong_done = True
 
     def _recievePing(self, message):
         decoded_pub_key = b64decode(message.replace(Protocol.PING_PREFIX.encode('UTF-8'),b""))
         pinger_public_key = serialization.load_pem_public_key(decoded_pub_key, backend=default_backend())
-        print("[*] PONGER has loaded public key from PINGER")
         self._parameters = pinger_public_key.parameters()
-        print("[*] PONGER has extracted parameters")
         private_key = self._parameters.generate_private_key()
         self._session_key = self._prepKeyForAES(private_key.exchange(pinger_public_key))
-        print(f"[+] Generated session key: {self._session_key}")
-        print("[+] PONGER has established SECURE SESSION KEY")
 
         # PONGER must send back his public key so PINGER can also make the session key
         ponger_public_key = private_key.public_key()
         pem_public_key = ponger_public_key.public_bytes(encoding=Encoding.PEM, format=PublicFormat.SubjectPublicKeyInfo)
         pem_public_key = Protocol.PONG_PREFIX + b64encode(pem_public_key).decode()
-        print(f"[+] PONGER made and returned their PUBLIC KEY")
         return pem_public_key
 
 
     def _recievePong(self, message):
         # ponger is the person who sent the PONG
-        print("[+] PINGER receieved Public key from PONGER")
         decoded_pub_key = b64decode(message.replace(Protocol.PONG_PREFIX.encode('UTF-8'),b""))
         ponger_public_key = serialization.load_pem_public_key(decoded_pub_key, backend=default_backend())
-        print("[*] PINGER Loaded ponger public key")
         if self._pinger_private_key is None:
             raise Exception("The private key is NONE and was likely not established or saved by the PINGER")
         self._session_key = self._prepKeyForAES(self._pinger_private_key.exchange(ponger_public_key))
-        print(f"[+] PINGER Generated session key: {self._session_key}")
-        print(f"[+] PINGER now has session key and Secure connection is established")
         # Cleaning up private key as we no longer need it
         # Note that this just prevents accidental leakage of private key from
         # calling the API. _private_key will still be in memmory although unreferenced
@@ -157,7 +140,6 @@ class Protocol:
 
     def SetSharedKey(self, secret):
         self._init_shared_key = self._prepKeyForAES(secret.encode('utf-8'))
-        print("[+] Set INITIAL shared secret!")
 
 
     # Encrypting messages
@@ -170,13 +152,8 @@ class Protocol:
     # RETURNS A PYTHON utf-8 string
     def EncryptAndProtectMessage(self, plain_text):
         if self.ping_pong_done and self._session_key != None:
-            print("Secure session key exists.. Encrypting with session key.")
             return self._encrypt(plain_text, self._session_key)
-        elif self._init_shared_key != None:
-            print("No secure sesstion... Encrypting with init key.")
-            return self._encrypt(plain_text, self._init_shared_key)
         else:
-            print("[*] WARNING we are missing a key, data sent unencrypted")
             return plain_text
 
     def _encrypt(self, plain_text, key):
@@ -203,13 +180,8 @@ class Protocol:
     # RETURNS A PYTHON utf-8 string
     def DecryptAndVerifyMessage(self, cipher_text):
         if self._session_key != None:
-            print("Secure session key exists.. Decrypting with session key.")
             return self._decrypt(cipher_text, self._session_key)
-        elif self._init_shared_key != None:
-            print("No secure sesstion... Decrypting with init key.")
-            return self._decrypt(cipher_text, self._init_shared_key)
         else:
-            print("[*] WARNING we are missing a key, data sent unencrypted")
             return cipher_text
 
     def _decrypt(self, cipher_text, key):
@@ -222,7 +194,6 @@ class Protocol:
             plain_text = cipher.decrypt_and_verify(ct, tag)
             return plain_text.decode("utf-8")
         except Exception as e:
-            print(f"Decription error, integrity?? Bad key?? {e}")
             # must be caught by user
             raise e
 
