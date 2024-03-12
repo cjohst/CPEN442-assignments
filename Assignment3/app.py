@@ -152,7 +152,6 @@ class Assignment3VPN:
                 # Receiving all the data
                 cipher_text_bytes = self.conn.recv(4096)
                 cipher_text = cipher_text_bytes.decode("UTF-8")
-                self._AppendLog(f"Received cipher text: {cipher_text}")
                 # Check if socket is still open
                 if cipher_text == None or len(cipher_text) == 0:
                     self._AppendLog("RECEIVER_THREAD: Received empty message")
@@ -167,15 +166,15 @@ class Assignment3VPN:
                 # Checking if the received message is part of your protocol
                 if self.prtcl.IsMessagePartOfProtocol(plain_text): #checks if newest msg is part of protocol
                     if Protocol.PING_PREFIX in plain_text:
-                        self._AppendLog("[+] PING Recieved")
+                        # PING received
                         # Disabling the button to prevent repeated clicks
                         self.secureButton["state"] = "disabled"
                         # Processing the protocol message
                         pem_public_key = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
-                        self._AppendLog(f"[*] Sending public key: {pem_public_key}")
+                        # sending public key
                         self._SendMessage(pem_public_key)
                     elif Protocol.PONG_PREFIX in plain_text:
-                        self._AppendLog("[+] PONG")
+                        # PONG receivec
                         try:
                             done_msg = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
                             self._SendMessage(done_msg)
@@ -186,7 +185,7 @@ class Assignment3VPN:
                     elif Protocol.DONE_PREFIX in plain_text:
                         _ = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
                         self._SendMessage("!! ENCRYPTED SESSION ESTABLISHED !!")
-                        self._AppendLog("ENCRYPTED SESSION ESTABLISHED")
+                        self._AppendLog("!! ENCRYPTED SESSION ESTABLISHED !!")
                     else:
                         self._AppendLog("[-] Unknown protocol message")
                 else:
@@ -199,10 +198,14 @@ class Assignment3VPN:
 
     # Send data to the other party
     def _SendMessage(self, message):
-        self._AppendLog(f"[+] PRE ENCRYPT: sending the message:\n {message}")
+        if not self.prtcl._session_key and not self.prtcl.IsMessagePartOfProtocol(message):
+            self._AppendLog(f"[-] WARNING: Secure connection not set, sending unencrypted")
+        elif not self.prtcl.IsMessagePartOfProtocol(message):
+            self._AppendLog(f"[+] PRE ENCRYPT: plaintext:\n{message}")
         plain_text = message
         cipher_text = self.prtcl.EncryptAndProtectMessage(plain_text)
-        self._AppendLog(f"[+] POST ENCRYPT: sending the ciphertext:\n {cipher_text}")
+        if self.prtcl._session_key and not self.prtcl.IsMessagePartOfProtocol(message):
+            self._AppendLog(f"[+] POST ENCRYPT: sending the ciphertext:\n {cipher_text}")
         self.conn.send(cipher_text.encode("UTF-8"))
 
     # Secure connection with mutual authentication and key establishment
