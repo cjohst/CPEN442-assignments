@@ -40,7 +40,7 @@ class Protocol:
         # This is how messsages are sent by default if we do not have a unique session key
         # Established
         # This is stored as bytes
-        self._init_shared_key = self._prepKeyForAES(init_shared_key.encode('utf-8'))
+        self._init_shared_key = init_shared_key
 
         # These are paramaters set on the server and client when doing a DH key exchange
         self._parameters = None
@@ -153,6 +153,8 @@ class Protocol:
     def EncryptAndProtectMessage(self, plain_text):
         if self.ping_pong_done and self._session_key != None:
             return self._encrypt(plain_text, self._session_key)
+        elif self._init_shared_key != None:
+            return self._encrypt(plain_text, self._init_shared_key)
         else:
             return plain_text
 
@@ -181,8 +183,9 @@ class Protocol:
     def DecryptAndVerifyMessage(self, cipher_text):
         if self._session_key != None:
             return self._decrypt(cipher_text, self._session_key)
-        else:
-            return cipher_text
+        elif self._init_shared_key != None:
+            return self._decrypt(cipher_text, self._init_shared_key)
+        return cipher_text
 
     def _decrypt(self, cipher_text, key):
         try:

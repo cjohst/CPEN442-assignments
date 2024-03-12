@@ -50,9 +50,9 @@ class Assignment3VPN:
         self.receive_thread = Thread(target=self._ReceiveMessages, daemon=True)
 
         # Creating a protocol object
-        self.prtcl = Protocol("initSharedKey")
+        self.prtcl = Protocol(None)
         # Note the Updated GUI key is caputred upon trying to connect
-        self._CaptureSharedSecret()
+    
 
     # Distructor
     def __del__(self):
@@ -198,18 +198,20 @@ class Assignment3VPN:
 
     # Send data to the other party
     def _SendMessage(self, message):
-        if not self.prtcl._session_key and not self.prtcl.IsMessagePartOfProtocol(message):
+        if not self.prtcl.ping_pong_done and not self.prtcl.IsMessagePartOfProtocol(message):
             self._AppendLog(f"[-] WARNING: Secure connection not set, sending unencrypted")
         elif not self.prtcl.IsMessagePartOfProtocol(message):
             self._AppendLog(f"[+] PRE ENCRYPT: plaintext:\n{message}")
         plain_text = message
         cipher_text = self.prtcl.EncryptAndProtectMessage(plain_text)
-        if self.prtcl._session_key and not self.prtcl.IsMessagePartOfProtocol(message):
+        if self.prtcl.ping_pong_done and not self.prtcl.IsMessagePartOfProtocol(message):
             self._AppendLog(f"[+] POST ENCRYPT: sending the ciphertext:\n {cipher_text}")
         self.conn.send(cipher_text.encode("UTF-8"))
 
     # Secure connection with mutual authentication and key establishment
     def SecureConnection(self):
+        # get the shared secret
+        self._CaptureSharedSecret()
         # disable the button to prevent repeated clicks
         self.secureButton["state"] = "disabled"
         init_message = self.prtcl.GetProtocolInitiationMessage()
