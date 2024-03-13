@@ -187,3 +187,28 @@ def test_OneSideWithSessionKeyOnly():
     ## For test to pass both must have the same session key
     assert ponger._session_key == pinger._session_key
 
+def testDifferentKeys():
+    pinger = Protocol()
+    ponger = Protocol()
+    pinger.SetSharedKey("testKey")
+    ponger.SetSharedKey("keyTest")
+
+    # Now try encrypting / Decrypt with session keys established
+    plain_text_pinger = "Hi my name is Jarvis your best friend."
+    cipher_text_pinger = pinger.EncryptAndProtectMessage(plain_text_pinger)
+
+    decrypted = ""
+    # Check if we can decrypt message with different initial secret
+    try:
+        cipher_text_ponger = cipher_text_pinger
+        decrypted = ponger.DecryptAndVerifyMessage(cipher_text_ponger)
+    except ValueError:
+        assert(True)
+
+    if(decrypted):
+        assert(False)
+    # try:
+    # except V as e:
+    #     assert(True)
+    # assert(False)
+    
