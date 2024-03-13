@@ -27,7 +27,7 @@ class Protocol:
     # Upon completion the PINGER recieving the PONG, PINGER will send a DONE message encryted with the session key
     DONE_PREFIX = "␟DONE␟"
 
-    def __init__(self, init_shared_key):
+    def __init__(self):
         # _session_key: This is the SESSION KEY resulting from a DH exchange.
         # If this value is NONE then all messages will be encrypted / decrypted
         # using the init_shared_key which is assumed to shared already across
@@ -40,7 +40,7 @@ class Protocol:
         # This is how messsages are sent by default if we do not have a unique session key
         # Established
         # This is stored as bytes
-        self._init_shared_key = init_shared_key
+        self._init_shared_key = None
 
         # These are paramaters set on the server and client when doing a DH key exchange
         self._parameters = None
@@ -144,10 +144,9 @@ class Protocol:
 
     # Encrypting messages
     # @plain_text is a utf-8 string
-    # This encryptes ALL messages between server and client.
-    # IF session_key is established messages will be encrypted with that ket.
-    # IF session_key is NONE then we will encrypt messages with the init_shared_key that
-    # both client and server have shared already.
+    # This encryptes messages between server and client if a session key is established.
+    # IF session_key is NONE then we will not encrypt regular communication
+    # DH key exchange methods will be encrypted with the initial shared secret
     # IF NO KEY IS ESTABLISHD: this function will not encrypt any messages and return UNENCYRPTED messages.
     # RETURNS A PYTHON utf-8 string
     def EncryptAndProtectMessage(self, plain_text):
@@ -177,7 +176,7 @@ class Protocol:
     # @cipher_text is a utf-8 string
     # This decrypts ALL messages between server and client.
     # IF session_key is established messages will be decrypted with that key.
-    # IF session_key is NONE then we will encrypt/decrypt messages with the init_shared_key
+    # IF session_key is NONE then we will encrypt/decrypt key exchange with the init_shared_key
     # IF NO KEY IS ESTABLISHD: this function will not decrypt any messages.
     # RETURNS A PYTHON utf-8 string
     def DecryptAndVerifyMessage(self, cipher_text):

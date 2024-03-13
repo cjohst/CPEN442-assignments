@@ -50,7 +50,7 @@ class Assignment3VPN:
         self.receive_thread = Thread(target=self._ReceiveMessages, daemon=True)
 
         # Creating a protocol object
-        self.prtcl = Protocol(None)
+        self.prtcl = Protocol()
         # Note the Updated GUI key is caputred upon trying to connect
     
 
