@@ -9,6 +9,10 @@ from tkinter import messagebox
 # local import from "protocol.py"
 from protocol import Protocol
 
+# REQUEST SECURE CONNECTION MESSAGE FLAG
+# APP.py will send this to other APP.py instances to let them know to start
+# encrypting with the inti_shared key.
+CAPTURE_INIT_TOKEN = "␟CAPTURE_TOKEN␟"
 
 class Assignment3VPN:
     # Constructor
@@ -50,9 +54,9 @@ class Assignment3VPN:
         self.receive_thread = Thread(target=self._ReceiveMessages, daemon=True)
 
         # Creating a protocol object
-        self.prtcl = Protocol("initSharedKey")
+        self.prtcl = Protocol()
         # Note the Updated GUI key is caputred upon trying to connect
-        self._CaptureSharedSecret()
+
 
     # Distructor
     def __del__(self):
@@ -83,10 +87,6 @@ class Assignment3VPN:
 
     # Create a TCP connection between the client and the server
     def CreateConnection(self):
-        # Design desicion. after connections are accepted we cannot change shared key!
-        # In an ideal work we woul disable the option while connections are alive.
-        # but this is not in scope of this assignmetn?
-        self._CaptureSharedSecret()
         # Change button states
         self._ChangeConnectionMode()
 
@@ -152,11 +152,16 @@ class Assignment3VPN:
                 # Receiving all the data
                 cipher_text_bytes = self.conn.recv(4096)
                 cipher_text = cipher_text_bytes.decode("UTF-8")
-                print(f"Received cipher text: {cipher_text}")
                 # Check if socket is still open
                 if cipher_text == None or len(cipher_text) == 0:
                     self._AppendLog("RECEIVER_THREAD: Received empty message")
                     break
+
+                # This means that the other app.py instance wants to start communication
+                # Over the inital secret channel as per the protocol class
+                if CAPTURE_INIT_TOKEN in cipher_text:
+                    self._CaptureSharedSecret()
+
                 # Decode message
                 plain_text = ""
                 try:
@@ -167,15 +172,15 @@ class Assignment3VPN:
                 # Checking if the received message is part of your protocol
                 if self.prtcl.IsMessagePartOfProtocol(plain_text): #checks if newest msg is part of protocol
                     if Protocol.PING_PREFIX in plain_text:
-                        print("[+] PING Recieved")
+                        # PING received
                         # Disabling the button to prevent repeated clicks
                         self.secureButton["state"] = "disabled"
                         # Processing the protocol message
                         pem_public_key = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
-                        print(f"[*] Sending public key: {pem_public_key}")
+                        # sending public key
                         self._SendMessage(pem_public_key)
                     elif Protocol.PONG_PREFIX in plain_text:
-                        print("[+] PONG")
+                        # PONG receivec
                         try:
                             done_msg = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
                             self._SendMessage(done_msg)
@@ -186,9 +191,8 @@ class Assignment3VPN:
                     elif Protocol.DONE_PREFIX in plain_text:
                         _ = self.prtcl.ProcessReceivedProtocolMessage(plain_text)
                         self._SendMessage("!! ENCRYPTED SESSION ESTABLISHED !!")
-                        self._AppendLog("ENCRYPTED SESSION ESTABLISHED")
+                        self._AppendLog("!! ENCRYPTED SESSION ESTABLISHED !!")
                     else:
-                        print("[-] Unknown protocol message")
                         self._AppendLog("[-] Unknown protocol message")
                 else:
                     self._AppendMessage("Other: {}".format(plain_text))
@@ -200,16 +204,23 @@ class Assignment3VPN:
 
     # Send data to the other party
     def _SendMessage(self, message):
-        print("PRE ENCRYPT: sending the message:")
-        print(message)
+        if not self.prtcl.ping_pong_done and not self.prtcl.IsMessagePartOfProtocol(message):
+            self._AppendLog(f"[-] WARNING: Secure connection not set, sending unencrypted")
+        elif not self.prtcl.IsMessagePartOfProtocol(message):
+            self._AppendLog(f"[+] PRE ENCRYPT: plaintext:\n{message}")
         plain_text = message
         cipher_text = self.prtcl.EncryptAndProtectMessage(plain_text)
-        print("\nPOST ENCRYPT: sending the message:")
-        print(cipher_text)
+        if self.prtcl.ping_pong_done and not self.prtcl.IsMessagePartOfProtocol(message):
+            self._AppendLog(f"[+] POST ENCRYPT: sending the ciphertext:\n {cipher_text}")
         self.conn.send(cipher_text.encode("UTF-8"))
 
     # Secure connection with mutual authentication and key establishment
     def SecureConnection(self):
+        # get the shared secret
+        self._CaptureSharedSecret()
+        # Tell the other participant to capture the shared secret to read
+        # Auth messages
+        self.conn.send(CAPTURE_INIT_TOKEN.encode("UTF-8"))
         # disable the button to prevent repeated clicks
         self.secureButton["state"] = "disabled"
         init_message = self.prtcl.GetProtocolInitiationMessage()
@@ -221,8 +232,8 @@ class Assignment3VPN:
         text = self.textMessage.get()
 
         # Sanitize user inputs to disallow inputs that mirror auth protocol
-        if Protocol.PONG_PREFIX in text or Protocol.PING_PREFIX in text or Protocol.DONE_PREFIX in text:
-            self._AppendLog("MESSAGE NOT ALLOWED.")
+        if self.prtcl.IsMessagePartOfProtocol(text) or CAPTURE_INIT_TOKEN in text:
+            self._AppendLog("[-] MESSAGE NOT ALLOWED.")
             self._AppendMessage("You: {}".format(text))
             self.textMessage.set("")
             return

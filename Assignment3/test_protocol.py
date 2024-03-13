@@ -17,7 +17,8 @@ import pytest
 def test_e2eTesting():
     e2e_test_key = "testkey123"
     # Testing Init message functionality
-    pinger = Protocol(e2e_test_key)
+    pinger = Protocol()
+    pinger.SetSharedKey(e2e_test_key)
     init_msg = pinger.GetProtocolInitiationMessage()
     print("Returned from init msg: " + init_msg)
     assert type(init_msg) == str
@@ -34,7 +35,8 @@ def test_e2eTesting():
     # Testing handling PING message
     ping_msg = init_msg
 
-    ponger = Protocol(e2e_test_key)
+    ponger = Protocol()
+    ponger.SetSharedKey(e2e_test_key)
     pong_msg = ponger.ProcessReceivedProtocolMessage(ping_msg)
     print("Pong pub key in pytest: " + pong_msg)
     print(f"ponger session_key: f{ponger._session_key}")
@@ -94,8 +96,8 @@ def test_e2eTesting():
 
 # Testing the protocol when there is NO session key
 def test_noSessionKey():
-    pinger = Protocol("")
-    ponger = Protocol("")
+    pinger = Protocol()
+    ponger = Protocol()
 
     pinger.SetSharedKey("TestKey123")
     ponger.SetSharedKey("TestKey123")
@@ -135,8 +137,11 @@ def test_noSessionKey():
         plain_text_pinger = ponger.DecryptAndVerifyMessage(cipher_text_pinger)
 
 def test_NoKey():
-    pinger = Protocol("testKey")
-    ponger = Protocol("testKey")
+    pinger = Protocol()
+    ponger = Protocol()
+    pinger.SetSharedKey("testKey")
+    ponger.SetSharedKey("testKey")
+
     # Now try encrypting / Decrypt with session keys established
     # first case is normal case no attempt to modify integrity
     plain_text_pinger = "Hi my name is Jarvis your best friend."
@@ -166,8 +171,10 @@ def test_NoKey():
 # The solution to this bug was to add an extra set sending a DONE message
 # from PINGER to PONGER after PINGER receives a PONG
 def test_OneSideWithSessionKeyOnly():
-    pinger = Protocol("testKey")
-    ponger = Protocol("testKey")
+    pinger = Protocol()
+    ponger = Protocol()
+    pinger.SetSharedKey("testKey")
+    ponger.SetSharedKey("testKey")
 
     init_msg = pinger.GetProtocolInitiationMessage()
     pong_msg = ponger.ProcessReceivedProtocolMessage(init_msg)
@@ -180,3 +187,32 @@ def test_OneSideWithSessionKeyOnly():
     ## For test to pass both must have the same session key
     assert ponger._session_key == pinger._session_key
 
+def testDifferentKeys():
+    pinger = Protocol()
+    ponger = Protocol()
+    pinger.SetSharedKey("testKey")
+    ponger.SetSharedKey("keyTest")
+
+    # Now try encrypting / Decrypt with session keys established
+    plain_text_pinger = "Hi my name is Jarvis your best friend."
+    cipher_text_pinger = pinger.EncryptAndProtectMessage(plain_text_pinger)
+
+    # Check if we can decrypt message with different initial secret
+    with pytest.raises(Exception):
+        cipher_text_ponger = cipher_text_pinger
+        _ = ponger.DecryptAndVerifyMessage(cipher_text_ponger)
+
+
+def testSendInPlainTextWithoutKey():
+    pinger = Protocol()
+    ponger = Protocol()
+
+    # Now try encrypting / Decrypt with session keys established
+    plain_text_pinger = "Hi my name is Jarvis your best friend."
+    cipher_text_pinger = pinger.EncryptAndProtectMessage(plain_text_pinger)
+
+    # Check if we can decrypt message with different initial secret
+    cipher_text_ponger = cipher_text_pinger
+    should_be_plain_text = ponger.DecryptAndVerifyMessage(cipher_text_ponger)
+
+    assert should_be_plain_text == plain_text_pinger
