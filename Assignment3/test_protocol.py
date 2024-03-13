@@ -197,18 +197,22 @@ def testDifferentKeys():
     plain_text_pinger = "Hi my name is Jarvis your best friend."
     cipher_text_pinger = pinger.EncryptAndProtectMessage(plain_text_pinger)
 
-    decrypted = ""
     # Check if we can decrypt message with different initial secret
-    try:
+    with pytest.raises(Exception):
         cipher_text_ponger = cipher_text_pinger
-        decrypted = ponger.DecryptAndVerifyMessage(cipher_text_ponger)
-    except ValueError:
-        assert(True)
+        _ = ponger.DecryptAndVerifyMessage(cipher_text_ponger)
 
-    if(decrypted):
-        assert(False)
-    # try:
-    # except V as e:
-    #     assert(True)
-    # assert(False)
-    
+
+def testSendInPlainTextWithoutKey():
+    pinger = Protocol()
+    ponger = Protocol()
+
+    # Now try encrypting / Decrypt with session keys established
+    plain_text_pinger = "Hi my name is Jarvis your best friend."
+    cipher_text_pinger = pinger.EncryptAndProtectMessage(plain_text_pinger)
+
+    # Check if we can decrypt message with different initial secret
+    cipher_text_ponger = cipher_text_pinger
+    should_be_plain_text = ponger.DecryptAndVerifyMessage(cipher_text_ponger)
+
+    assert should_be_plain_text == plain_text_pinger
