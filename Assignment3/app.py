@@ -9,6 +9,10 @@ from tkinter import messagebox
 # local import from "protocol.py"
 from protocol import Protocol
 
+# REQUEST SECURE CONNECTION MESSAGE FLAG
+# APP.py will send this to other APP.py instances to let them know to start
+# encrypting with the inti_shared key.
+CAPTURE_INIT_TOKEN = "␟CAPTURE_TOKEN␟"
 
 class Assignment3VPN:
     # Constructor
@@ -52,7 +56,7 @@ class Assignment3VPN:
         # Creating a protocol object
         self.prtcl = Protocol()
         # Note the Updated GUI key is caputred upon trying to connect
-    
+
 
     # Distructor
     def __del__(self):
@@ -83,10 +87,6 @@ class Assignment3VPN:
 
     # Create a TCP connection between the client and the server
     def CreateConnection(self):
-        # Design desicion. after connections are accepted we cannot change shared key!
-        # In an ideal work we woul disable the option while connections are alive.
-        # but this is not in scope of this assignmetn?
-        self._CaptureSharedSecret()
         # Change button states
         self._ChangeConnectionMode()
 
@@ -156,6 +156,12 @@ class Assignment3VPN:
                 if cipher_text == None or len(cipher_text) == 0:
                     self._AppendLog("RECEIVER_THREAD: Received empty message")
                     break
+
+                # This means that the other app.py instance wants to start communication
+                # Over the inital secret channel as per the protocol class
+                if CAPTURE_INIT_TOKEN in cipher_text:
+                    self._CaptureSharedSecret()
+
                 # Decode message
                 plain_text = ""
                 try:
@@ -212,6 +218,9 @@ class Assignment3VPN:
     def SecureConnection(self):
         # get the shared secret
         self._CaptureSharedSecret()
+        # Tell the other participant to capture the shared secret to read
+        # Auth messages
+        self.conn.send(CAPTURE_INIT_TOKEN.encode("UTF-8"))
         # disable the button to prevent repeated clicks
         self.secureButton["state"] = "disabled"
         init_message = self.prtcl.GetProtocolInitiationMessage()
@@ -223,7 +232,7 @@ class Assignment3VPN:
         text = self.textMessage.get()
 
         # Sanitize user inputs to disallow inputs that mirror auth protocol
-        if Protocol.PONG_PREFIX in text or Protocol.PING_PREFIX in text or Protocol.DONE_PREFIX in text:
+        if self.prtcl.IsMessagePartOfProtocol(text) or CAPTURE_INIT_TOKEN in text:
             self._AppendLog("[-] MESSAGE NOT ALLOWED.")
             self._AppendMessage("You: {}".format(text))
             self.textMessage.set("")
